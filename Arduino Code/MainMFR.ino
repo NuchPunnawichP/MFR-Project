@@ -18,6 +18,12 @@ volatile long encoderCount = 0;
 const int ppr = 1024;
 float angle = 0.0;
 
+// 1 - cos() function profile
+const int resolution = 100;           // Number of points per half-cycle
+const float pi = 3.14159;
+const float A = stepsPerMove / 2.0;   // Half amplitude in steps
+
+float previousPosition = 0;
 
 
 // MAIN FUNCTION
@@ -58,6 +64,31 @@ void loop()
 // FUNCTION
 
 // moving stepper motor
+bool stop_main()
+{
+  while (Serial.available())
+  {
+    char c = Serial.read();
+
+    if (c == '\n')
+    {
+      command.trim();
+
+      if (command == "stop")
+      {
+        Serial.println("STOP THE DEMO");
+        return 1;
+      }
+
+      command = "";
+    }
+    else
+    {
+      command += c;
+    }
+  }
+}
+
 void moveSteps(int steps)
 {
   for (int i = 0 ; i < steps ; i++)
@@ -97,6 +128,9 @@ void main_program()
       else if(command == "zero")
       {
         Serial.println("Here the starting point");
+
+        angle = 0.0;
+        previousPosition = 0;
       }
       else if(command == "start")
       {
@@ -105,10 +139,55 @@ void main_program()
 
         Serial.print("! Let's go !");
 
-        while(true)
+        while (true)
         {
-          // 1 - cos(theta) function
-          
+          // STOP the program
+          if(stop_main())
+            break;
+
+          // right motion
+          for (int i = 0; i <= resolution; i++)
+          {
+            float theta = pi * i / resolution;
+            float targetPosition = A * (1 - cos(theta));
+            int stepsToMove = round(targetPosition - previousPosition);
+
+            if (stepsToMove > 0)
+            {
+              digitalWrite(DIR_PIN, LOW); // RIGHT
+              moveSteps(stepsToMove);
+            }
+            else if (stepsToMove < 0)
+            {
+              digitalWrite(DIR_PIN, HIGH); // LEFT
+              moveSteps(-stepsToMove);
+            }
+
+            previousPosition = targetPosition;
+            delay(10); // adjust speed/smoothness
+          }
+
+          // left motion
+          for (int i = resolution; i >= 0; i--)
+          {
+            float theta = pi * i / resolution;
+            float targetPosition = A * (1 - cos(theta));
+            int stepsToMove = round(targetPosition - previousPosition);
+
+            if (stepsToMove > 0)
+            {
+              digitalWrite(DIR_PIN, HIGH); // LEFT
+              moveSteps(stepsToMove);
+            }
+            else if (stepsToMove < 0)
+            {
+              digitalWrite(DIR_PIN, LOW); // RIGHT
+              moveSteps(-stepsToMove);
+            }
+
+            previousPosition = targetPosition;
+            delay(10);
+          }
         }
       }
       else
@@ -172,7 +251,6 @@ void read_encoder()
   Serial.print(currentMillis);
   Serial.print("\t");
   Serial.println("0");
-
 
   //delay(20); // can adjust
 }
