@@ -48,6 +48,8 @@ void setup()
   Serial.print("Type \"left\" for adjusting the initial position to the left.\n");
   Serial.print("Type \"right\" for adjusting the initial position to the right.\n");
   Serial.print("Type \"zero\" for setting the initial position.\n");
+  Serial.print("Type \"start\" for start the Vibration Demo Device\n");
+  Serial.print("Type \"stop\" for stop this device\n");
 }
 
 void loop()
