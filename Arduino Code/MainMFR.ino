@@ -2,28 +2,36 @@
 #define STEP_PIN 2
 #define DIR_PIN 3
 
-const int stepsPerMove = 750; // M8....calculating [reciprocating function - DEMO]
-const int stepPerMoveForAdjust = 500; // M8....calculating [for adjsting]
-const int stepDelay = 50; // move step (ms)
+const int stepsPerMove = 500; // M8....[reciprocating function --> 1-cos() function]
+const int stepPerMoveForAdjust = 200; // M8....[for adjsting]
+const int stepDelay = 750; // move step (ms) --- 10-30 should be great
 
 // Command
 String command = "";
 
 // Encoder Connections
-const byte encoderPinA = 5;
-const byte encoderPinB = 6;
+const byte encoderPinA = 20;
+const byte encoderPinB = 21;
 
 // Encoder Variables
 volatile long encoderCount = 0;
 const int ppr = 1024;
 float angle = 0.0;
+long count = 0;
 
-// 1 - cos() function profile
-const int resolution = 100;           // Number of points per half-cycle
-const float pi = 3.14159;
-const float A = stepsPerMove / 2.0;   // Half amplitude in steps
+// sin or cos function
+// finite position and speed. Declare by step and stepDelay;
+float A = 100.0;
+float W = 100.0;
 
-float previousPosition = 0;
+const int sA[5] = {100, 75, 50, 20};
+const int sW[5] = {100, 75, 50};
+
+const int max_step[25] = {386, 348, 277, 178, 61, 61, 178, 277, 348, 386, 386, 348, 277, 178, 61, 61, 178, 277, 348, 386};
+const int max_speed[25] = {100, 76, 54, 37, 26, 26, 37, 54, 76, 100, 100, 76, 54, 37, 26, 26, 37, 54, 76, 100};
+
+char Orientation[21] = {'r', 'r', 'r', 'r', 'r', 'l', 'l', 'l', 'l', 'l', 'l', 'l', 'l', 'l', 'l', 'r', 'r', 'r', 'r', 'r'};
+
 
 
 // MAIN FUNCTION
@@ -45,17 +53,18 @@ void setup()
 
   // How to use control this vibration device
   Serial.print("WELCOME TO VIBRATION DEMO DEVICE\n");
+  Serial.print("Type \"A\" with the number of [0, 1, 2] for %Amplitude at [100%, 75%, 50%] with maximum at 50 mm\n");
+  Serial.print("Type \"W\" with the number of [0, 1, 2, 3] for %Speed at [100%, 75%, 50%, 20%]\n");
   Serial.print("Type \"left\" for adjusting the initial position to the left.\n");
   Serial.print("Type \"right\" for adjusting the initial position to the right.\n");
   Serial.print("Type \"zero\" for setting the initial position.\n");
   Serial.print("Type \"start\" for start the Vibration Demo Device\n");
-  Serial.print("Type \"stop\" for stop this device\n");
 }
 
 void loop()
 {
   // updating the encoder position
-  read_encoder();
+  //read_encoder();
 
   // vibration demo program
   main_program();
@@ -66,40 +75,18 @@ void loop()
 // FUNCTION
 
 // moving stepper motor
-bool stop_main()
-{
-  while (Serial.available())
-  {
-    char c = Serial.read();
-
-    if (c == '\n')
-    {
-      command.trim();
-
-      if (command == "stop")
-      {
-        Serial.println("STOP THE DEMO");
-        return 1;
-      }
-
-      command = "";
-    }
-    else
-    {
-      command += c;
-    }
-  }
-}
-
-void moveSteps(int steps)
+void moveSteps(int steps, int fraction)
 {
   for (int i = 0 ; i < steps ; i++)
   {
     digitalWrite(STEP_PIN, HIGH);
-    delayMicroseconds(stepDelay);
+    delayMicroseconds( int(stepDelay / (100 / fraction)) );
 
     digitalWrite(STEP_PIN, LOW);
-    delayMicroseconds(stepDelay);
+    delayMicroseconds( int(stepDelay / (100 / fraction)) );
+
+    // Debugging
+    //Serial.println(int(stepDelay / (100 / fraction)));
   }
 }
 
@@ -113,85 +100,93 @@ void main_program()
     {
       command.trim();
 
-      if (command == "left")
+      if(command == "A0" || command == "A2" || command == "A3")
+      {
+        int mode = command[1] - '0';
+        A = sA[mode];
+        
+        // Debugging
+        Serial.print("Mode Amplitude\n");
+        Serial.println(mode);
+        Serial.println(A);
+      }
+      else if(command == "W0" || command == "W1" || command == "W2")
+      {
+        int mode = command[1] - '0';
+        W = sW[mode];
+
+        // Debugging
+        Serial.print("Mode W\n");
+        Serial.println(mode);
+        Serial.println(W);
+      }
+      else if(command == "ch")
+      {
+        int tim = 0;
+        while(tim < 1500)
+        {
+          read_encoder();
+          tim++;
+        }
+      }
+      else if (command == "l")
       {
         // Move Left if place the compututer to the right side of linear stage
         Serial.println("Ok Left");
         digitalWrite(DIR_PIN, HIGH);
-        moveSteps(stepPerMoveForAdjust);
+        moveSteps(stepPerMoveForAdjust, 100);
       }
-      else if(command == "right")
+      else if(command == "r")
       {
         // Move Right if place the compututer to the right side of linear stage
         Serial.println("Ok Right");
         digitalWrite(DIR_PIN, LOW);
-        moveSteps(stepPerMoveForAdjust);
+        moveSteps(stepPerMoveForAdjust, 100);
       }
       else if(command == "zero")
       {
-        Serial.println("Here the starting point");
+        Serial.print("Here the starting point\n");
 
-        angle = 0.0;
-        previousPosition = 0;
+        count = 0.0;
+        Serial.print("Starting angle: ");
+        Serial.println(angle);
       }
       else if(command == "start")
       {
         // updating the encoder position
         read_encoder();
 
-        Serial.print("! Let's go !");
+        Serial.println("! Let's go !");
 
         while (true)
         {
-          // STOP the program
-          if(stop_main())
-            break;
-
-          // right motion
-          for (int i = 0; i <= resolution; i++)
+          for(int i=0 ; i<20; i++)
           {
-            float theta = pi * i / resolution;
-            float targetPosition = A * (1 - cos(theta));
-            int stepsToMove = round(targetPosition - previousPosition);
+            // Determine the step and speed for the sin or cos function
+            int stepMoving = int( max_step[i] / (100 / A) );
+            int speedMoving = int( max_speed[i] / (100 / W) );
 
-            if (stepsToMove > 0)
-            {
+            // Determine the oriontation
+            char orion = Orientation[i];
+
+            if(orion == 'r')
               digitalWrite(DIR_PIN, LOW); // RIGHT
-              moveSteps(stepsToMove);
-            }
-            else if (stepsToMove < 0)
-            {
+            else if(orion == 'l')
               digitalWrite(DIR_PIN, HIGH); // LEFT
-              moveSteps(-stepsToMove);
-            }
 
-            previousPosition = targetPosition;
-            delay(10); // adjust speed/smoothness
-          }
-
-          // left motion
-          for (int i = resolution; i >= 0; i--)
-          {
-            float theta = pi * i / resolution;
-            float targetPosition = A * (1 - cos(theta));
-            int stepsToMove = round(targetPosition - previousPosition);
-
-            if (stepsToMove > 0)
-            {
-              digitalWrite(DIR_PIN, HIGH); // LEFT
-              moveSteps(stepsToMove);
-            }
-            else if (stepsToMove < 0)
-            {
-              digitalWrite(DIR_PIN, LOW); // RIGHT
-              moveSteps(-stepsToMove);
-            }
-
-            previousPosition = targetPosition;
-            delay(10);
+            moveSteps(stepMoving, speedMoving);
+            
+            /*
+            // Debugging
+            Serial.println(orion);
+            Serial.println(stepMoving);
+            Serial.println(speedMoving);
+            delay(1000);
+            */
           }
         }
       }
+
       else
       {
         Serial.println("Try Again !!");
@@ -240,7 +235,7 @@ void handleEncoderB()
 void read_encoder()
 {
   noInterrupts();
-  long count = encoderCount;
+  count = encoderCount;
   interrupts();
 
   float angle = (count % ppr) * (360.0 / ppr); // convert to angle
