@@ -226,7 +226,6 @@ void main_program()
         // Move Left if place the compututer to the right side of linear stage
         Serial.println("Ok Left");
         digitalWrite(DIR_PIN, HIGH);
-        // Non-blocking version
         startStepSequence(stepPerMoveForAdjust, 100);
       }
       else if(command == "r")
@@ -234,7 +233,6 @@ void main_program()
         // Move Right if place the compututer to the right side of linear stage
         Serial.println("Ok Right");
         digitalWrite(DIR_PIN, LOW);
-        // Non-blocking version
         startStepSequence(stepPerMoveForAdjust, 100);
       }
       else if(command == "zero")
@@ -251,7 +249,7 @@ void main_program()
         Serial.println("! Let's go !");
         
         // Initialize vibration mode
-        vibrationIndex = -1; // Will increment to 0 in setupNextVibrationSegment
+        vibrationIndex = -1; // Just for the initial
         setupNextVibrationSegment();
         isRunning = true;
       }
