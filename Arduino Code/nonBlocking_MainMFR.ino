@@ -35,22 +35,21 @@ char Orientation[21] = {'r', 'r', 'r', 'r', 'r', 'l', 'l', 'l', 'l', 'l', 'l', '
 // Non-blocking stepper variables
 unsigned long lastStepTime = 0;
 
-int currentStepIndex = 0;
 int currentStep = 0;
 int currentStepsTotal = 0;
 int currentStepDelay = 0;
+int currentPatternIndex = 0;
 
 bool isStepHigh = false;
 bool isRunning = false;
-
-int vibrationIndex = 0;
+bool isVibrating = false;
 
 // Encoder reading timing
 unsigned long lastEncoderReadTime = 0;
-const int encoderReadInterval = 20; // Read every 20ms
+const int encoderReadInterval = 20; // Read every 20 ms
+bool ch = false; // for checking encoder while vibrating
 
 // MAIN FUNCTION
-
 void setup()
 {
   Serial.begin(9600);
@@ -68,8 +67,8 @@ void setup()
 
   // How to use control this vibration device
   Serial.print("WELCOME TO VIBRATION DEMO DEVICE\n");
-  Serial.print("Type \"A\" with the number of [0, 1, 2] for %Amplitude at [100%, 75%, 50%] with maximum at 50 mm\n");
-  Serial.print("Type \"W\" with the number of [0, 1, 2, 3] for %Speed at [100%, 75%, 50%, 20%]\n");
+  Serial.print("Type \"A\" with the number of [0, 1, 2, 3] for %Amplitude at [100%, 75%, 50%, 20%] with maximum at 50 mm\n");
+  Serial.print("Type \"W\" with the number of [0, 1, 2] for %Speed at [100%, 75%, 50%]\n");
   Serial.print("Type \"l\" for adjusting the initial position to the left.\n");
   Serial.print("Type \"r\" for adjusting the initial position to the right.\n");
   Serial.print("Type \"zero\" for setting the initial position.\n");
@@ -86,19 +85,18 @@ void loop()
   handleStepper();
   
   // Read encoder
-  readEncoderRegularly();
+  if(ch)
+    readEncoderRegularly();
 }
-
-
 
 // FUNCTION
 
-// Non-blocking moveSteps
-void startStepSequence(int steps, int fraction)
+// Non-blocking steps
+void startStepSequence(int steps, int stepDelayValue)
 {
   currentStep = 0;
   currentStepsTotal = steps;
-  currentStepDelay = int(stepDelay / (100 / fraction));
+  currentStepDelay = stepDelayValue;
   isStepHigh = false;
   isRunning = true;
   lastStepTime = micros();
@@ -132,44 +130,58 @@ void handleStepper()
       // Check if movement is complete
       if (currentStep >= currentStepsTotal)
       {
-        if (vibrationIndex > 0)
+        isRunning = false;
+        
+        // If in vibration mode, continue to next segment
+        if (isVibrating)
         {
-          // Continue to next segment in vibration sequence
           setupNextVibrationSegment();
-        }
-        else
-        {
-          // End of single movement
-          isRunning = false;
         }
       }
     }
   }
 }
 
-// Setting up for the next vibration segment
+// Move to next vibration segment
 void setupNextVibrationSegment()
 {
-  vibrationIndex++;
-  if (vibrationIndex >= 20) vibrationIndex = 0;
+  // Move to next pattern index
+  currentPatternIndex++;
+  if (currentPatternIndex >= 20) currentPatternIndex = 0;
   
   // Calculate steps and speed for this segment
-  int stepMoving = int(max_step[vibrationIndex] / (100 / A));
-  int speedMoving = int(max_speed[vibrationIndex] / (100 / W));
+  int stepMoving = int(max_step[currentPatternIndex] / (100 / A));
+  int speedMoving = int(max_speed[currentPatternIndex] / (100 / W));
   
-  // Set direction
-  if (Orientation[vibrationIndex] == 'r')
+  // Set direction based on orientation
+  if (Orientation[currentPatternIndex] == 'r')
     digitalWrite(DIR_PIN, LOW); // RIGHT
-  else if (Orientation[vibrationIndex] == 'l')
+  else if (Orientation[currentPatternIndex] == 'l')
     digitalWrite(DIR_PIN, HIGH); // LEFT
-    
-  // Reset step counter and set new parameters
-  currentStep = 0;
-  currentStepsTotal = stepMoving;
-  currentStepDelay = int(stepDelay / (100 / speedMoving));
+  
+  // Calculate step delay based on speed
+  int actualStepDelay = int(stepDelay * (100 / speedMoving));
+  
+  // Start the next segment
+  startStepSequence(stepMoving, actualStepDelay);
 }
 
-// encoder reading while generating excitation
+// Start vibration sequence
+void startVibration()
+{
+  isVibrating = true;
+  currentPatternIndex = 19; // Set to last index, it will increment to 0 in setupNextVibrationSegment
+  setupNextVibrationSegment();
+}
+
+// Stop vibration sequence
+void stopVibration()
+{
+  isVibrating = false;
+  isRunning = false;
+}
+
+// Encoder reading while generating excitation
 void readEncoderRegularly()
 {
   unsigned long currentMillis = millis();
@@ -223,17 +235,17 @@ void main_program()
       }
       else if (command == "l")
       {
-        // Move Left if place the compututer to the right side of linear stage
+        // Move Left if place the computer to the right side of linear stage
         Serial.println("Ok Left");
         digitalWrite(DIR_PIN, HIGH);
-        startStepSequence(stepPerMoveForAdjust, 100);
+        startStepSequence(stepPerMoveForAdjust, stepDelay);
       }
       else if(command == "r")
       {
-        // Move Right if place the compututer to the right side of linear stage
+        // Move Right if place the computer to the right side of linear stage
         Serial.println("Ok Right");
         digitalWrite(DIR_PIN, LOW);
-        startStepSequence(stepPerMoveForAdjust, 100);
+        startStepSequence(stepPerMoveForAdjust, stepDelay);
       }
       else if(command == "zero")
       {
@@ -247,18 +259,17 @@ void main_program()
       {
         // Start vibration sequence
         Serial.println("! Let's go !");
-        
-        // Initialize vibration mode
-        vibrationIndex = -1; // Just for the initial
-        setupNextVibrationSegment();
-        isRunning = true;
+        ch = true;
+
+        startVibration();
       }
       else if(command == "stop")
       {
         // Stop any movement
         Serial.println("Stopping movement");
-        isRunning = false;
-        vibrationIndex = 0;
+        ch = false;
+
+        stopVibration();
       }
       else
       {
@@ -274,9 +285,7 @@ void main_program()
   }
 }
 
-
-
-// reading encoder
+// Reading encoder
 void handleEncoderA()
 {
   bool A = digitalRead(encoderPinA);
@@ -313,7 +322,7 @@ void read_encoder()
   count = encoderCount;
   interrupts();
 
-  angle = (count % ppr) * (360.0 / ppr); // convert to angle
+  angle = (count % ppr) * (360.0 / ppr / 4); // convert to angle
 
   unsigned long currentMillis = millis();
 
